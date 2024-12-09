@@ -13,6 +13,7 @@ const app = express();
 const port = 3010;
 
 app.use(express.static('static'));
+app.use(express.json());
 app.use(cors());
 
 app.get('/', (req, res) => {
@@ -116,11 +117,6 @@ async function getEmployeeDetails(employeeData) {
     department,
     role,
   };
-}
-
-async function addEmployee(empData) {
-  let newEmployee = await employee.create(empData);
-  return { newEmployee };
 }
 
 app.get('/employees', async (req, res) => {
@@ -287,7 +283,7 @@ app.post('/employees/new', async (req, res) => {
     let depId = req.body.departmentId;
     let roleId = req.body.roleId;
 
-    let newEmployee = await addEmployee(empData);
+    let newEmployee = await employee.create(empData);
     await employeeDepartment.create({
       employeeId: newEmployee.id,
       departmentId: depId,
@@ -307,6 +303,103 @@ app.post('/employees/new', async (req, res) => {
     });
   }
 });
+
+app.post('/employees/update/:id', async (req, res) => {
+  const employeeId = req.params.id;
+
+  try {
+    // Find the employee
+    const existingEmployee = await employee.findByPk(employeeId);
+    if (!existingEmployee) {
+      return res.status(404).json({ message: 'Employee not found' });
+    }
+
+    // Update employee basic details if present
+    if (req.body.name) {
+      existingEmployee.name = req.body.name;
+    }
+    if (req.body.email) {
+      existingEmployee.email = req.body.email;
+    }
+    await existingEmployee.save();
+
+    // Update department if departmentId is provided
+    if (req.body.departmentId) {
+      // Delete existing department associations
+      await employeeDepartment.destroy({
+        where: { employeeId }
+      });
+
+      // Create new department association
+      await employeeDepartment.create({
+        employeeId,
+        departmentId: req.body.departmentId
+      });
+    }
+
+    // Update role if roleId is provided
+    if (req.body.roleId) {
+      // Delete existing role associations
+      await employeeRole.destroy({
+        where: { employeeId }
+      });
+
+      // Create new role association
+      await employeeRole.create({
+        employeeId,
+        roleId: req.body.roleId
+      });
+    }
+
+    // Fetch and return updated employee details
+    const updatedEmployee = await getEmployeeDetails(existingEmployee);
+    res.json(updatedEmployee);
+
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error updating employee',
+      error: error.message
+    });
+  }
+});
+
+app.post('/employees/delete', async (req, res) => {
+  const employeeId = req.body.id;
+ 
+  try {
+    // Verify employee exists
+    const existingEmployee = await employee.findByPk(employeeId);
+    if (!existingEmployee) {
+      return res.status(404).json({ message: 'Employee not found' });
+    }
+ 
+    // Delete employee department associations
+    await employeeDepartment.destroy({
+      where: { employeeId }
+    });
+ 
+    // Delete employee role associations
+    await employeeRole.destroy({
+      where: { employeeId }
+    });
+ 
+    // Delete employee record
+    await employee.destroy({
+      where: { id: employeeId }
+    });
+ 
+    res.json({ 
+      message: 'Employee deleted successfully',
+      deletedEmployeeId: employeeId 
+    });
+ 
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error deleting employee',
+      error: error.message
+    });
+  }
+ });
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`Example app listening at http://localhost:${port}`);
